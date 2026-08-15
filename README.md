@@ -110,20 +110,4 @@ AI-Resume-Screening-System/
 │   └── project_report.pdf
 │
 └── tests/
-🚀 Future Enhancements
-Multilingual resume support
-OCR for scanned resumes
-Advanced cross-encoder reranking
-Domain-specific model fine-tuning
-Skill ontology and taxonomy
-Docker deployment
-Cloud deployment
-Advanced fairness and bias evaluation
-⚠️ Responsible AI
-This project is intended as a decision-support system rather than an autonomous hiring system.
-Candidate ranking should be reviewed by a human decision-maker. Protected attributes and inappropriate personal information should not be used for ranking.
-👨‍💻 Project
-AI-Based Resume Screening System
-Developed as a major project exploring the application of Artificial Intelligence, NLP and Transformer models to real-world recruitment workflows.
-📄 Documentation
-The complete project report is available in the docs/ directory.
+
