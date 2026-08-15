@@ -1,15 +1,27 @@
 import streamlit as st
-import fitz
-import numpy as np
 import pandas as pd
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-import re
+
+from src.document_parser import extract_pdf_text
+from src.preprocessing import normalize_text
+from src.matcher import (
+    calculate_semantic_similarity,
+    calculate_skill_match,
+    get_matched_skills,
+    get_missing_skills,
+    calculate_final_score
+)
+from src.ranking import (
+    rank_candidates,
+    get_candidate_category
+)
+from src.explainability import (
+    generate_candidate_report
+)
 
 
-# ---------------------------------------------------------
+# =========================================================
 # PAGE CONFIGURATION
-# ---------------------------------------------------------
+# =========================================================
 
 st.set_page_config(
     page_title="AI Resume Screening System",
@@ -18,324 +30,91 @@ st.set_page_config(
 )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # CUSTOM CSS
-# ---------------------------------------------------------
-
-st.markdown("""
-<style>
-
-.main {
-    background-color: #f7f8fc;
-}
-
-.metric-card {
-    padding: 20px;
-    border-radius: 12px;
-    background-color: white;
-    box-shadow: 0px 2px 8px rgba(0,0,0,0.08);
-}
-
-.result-card {
-    padding: 18px;
-    border-radius: 12px;
-    background-color: white;
-    margin-bottom: 15px;
-    border-left: 5px solid #6c63ff;
-}
-
-h1 {
-    color: #25234a;
-}
-
-h2 {
-    color: #34315e;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------
-# LOAD TRANSFORMER MODEL
-# ---------------------------------------------------------
-
-@st.cache_resource
-def load_model():
-
-    return SentenceTransformer("all-MiniLM-L6-v2")
-
-
-model = load_model()
-
-
-# ---------------------------------------------------------
-# PDF TEXT EXTRACTION
-# ---------------------------------------------------------
-
-def extract_pdf_text(uploaded_file):
-
-    document = fitz.open(
-        stream=uploaded_file.read(),
-        filetype="pdf"
-    )
-
-    text = ""
-
-    for page in document:
-        text += page.get_text()
-
-    document.close()
-
-    return text
-
-
-# ---------------------------------------------------------
-# TEXT PREPROCESSING
-# ---------------------------------------------------------
-
-def preprocess_text(text):
-
-    text = text.lower()
-
-    text = re.sub(
-        r'\s+',
-        ' ',
-        text
-    )
-
-    return text.strip()
-
-
-# ---------------------------------------------------------
-# SKILL EXTRACTION
-# ---------------------------------------------------------
-
-SKILLS = [
-
-    "python",
-    "java",
-    "c++",
-    "c",
-    "javascript",
-    "typescript",
-    "sql",
-    "html",
-    "css",
-    "react",
-    "node.js",
-    "machine learning",
-    "deep learning",
-    "artificial intelligence",
-    "nlp",
-    "natural language processing",
-    "tensorflow",
-    "pytorch",
-    "scikit-learn",
-    "pandas",
-    "numpy",
-    "data science",
-    "computer vision",
-    "git",
-    "github",
-    "docker",
-    "aws",
-    "azure",
-    "mongodb",
-    "mysql",
-    "postgresql",
-    "excel"
-]
-
-
-def extract_skills(text):
-
-    text = text.lower()
-
-    found_skills = []
-
-    for skill in SKILLS:
-
-        if skill.lower() in text:
-
-            found_skills.append(skill)
-
-    return found_skills
-
-
-# ---------------------------------------------------------
-# SEMANTIC SIMILARITY
-# ---------------------------------------------------------
-
-def calculate_similarity(resume_text, job_text):
-
-    embeddings = model.encode(
-        [
-            resume_text,
-            job_text
-        ]
-    )
-
-    score = cosine_similarity(
-        [embeddings[0]],
-        [embeddings[1]]
-    )[0][0]
-
-    return float(score)
-
-
-# ---------------------------------------------------------
-# SCREEN RESUMES
-# ---------------------------------------------------------
-
-def screen_resumes(resumes, job_description):
-
-    results = []
-
-    job_clean = preprocess_text(job_description)
-
-    job_skills = set(
-        extract_skills(job_clean)
-    )
-
-    for resume_name, resume_text in resumes:
-
-        clean_resume = preprocess_text(
-            resume_text
-        )
-
-        semantic_score = calculate_similarity(
-            clean_resume,
-            job_clean
-        )
-
-        resume_skills = set(
-            extract_skills(clean_resume)
-        )
-
-        matched_skills = (
-            job_skills &
-            resume_skills
-        )
-
-        missing_skills = (
-            job_skills -
-            resume_skills
-        )
-
-        if len(job_skills) > 0:
-
-            skill_score = (
-                len(matched_skills) /
-                len(job_skills)
-            )
-
-        else:
-
-            skill_score = 0
-
-        final_score = (
-
-            0.70 * semantic_score +
-
-            0.30 * skill_score
-
-        )
-
-        results.append({
-
-            "Candidate": resume_name,
-
-            "Semantic Score":
-                round(
-                    semantic_score * 100,
-                    2
-                ),
-
-            "Skill Score":
-                round(
-                    skill_score * 100,
-                    2
-                ),
-
-            "Final Score":
-                round(
-                    final_score * 100,
-                    2
-                ),
-
-            "Matched Skills":
-                ", ".join(
-                    sorted(
-                        matched_skills
-                    )
-                ),
-
-            "Missing Skills":
-                ", ".join(
-                    sorted(
-                        missing_skills
-                    )
-                )
-        })
-
-    results.sort(
-        key=lambda x:
-        x["Final Score"],
-        reverse=True
-    )
-
-    return results
-
-
-# ---------------------------------------------------------
-# SIDEBAR
-# ---------------------------------------------------------
-
-with st.sidebar:
-
-    st.title("🤖 AI Resume Screening")
-
-    st.markdown("---")
-
-    st.markdown(
-        """
-        ### Navigation
-
-        🏠 Dashboard
-
-        📄 Resume Screening
-
-        📊 Candidate Ranking
-
-        💡 Explainable Results
-        """
-    )
-
-    st.markdown("---")
-
-    st.info(
-        "This system uses NLP and transformer embeddings to compare resumes with job descriptions."
-    )
-
-
-# ---------------------------------------------------------
-# MAIN HEADER
-# ---------------------------------------------------------
+# =========================================================
+
+st.markdown(
+    """
+    <style>
+
+    .main {
+        background-color: #f7f8fc;
+    }
+
+    .result-card {
+        padding: 20px;
+        border-radius: 12px;
+        background-color: white;
+        margin-bottom: 15px;
+        border-left: 5px solid #6c63ff;
+        box-shadow: 0px 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .metric-card {
+        padding: 15px;
+        border-radius: 10px;
+        background-color: white;
+        text-align: center;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# =========================================================
+# TITLE
+# =========================================================
 
 st.title(
     "🤖 AI-Based Resume Screening System"
 )
 
 st.write(
-    "Automatically analyze resumes, compare them with a job description, "
-    "and rank candidates using semantic similarity."
+    "AI-powered resume screening using "
+    "NLP, transformer embeddings and semantic matching."
 )
 
 
-# ---------------------------------------------------------
+# =========================================================
+# SIDEBAR
+# =========================================================
+
+with st.sidebar:
+
+    st.header("⚙️ System Information")
+
+    st.write(
+        """
+        **AI Model**
+
+        Sentence Transformer  
+        `all-MiniLM-L6-v2`
+        """
+    )
+
+    st.write(
+        """
+        **Matching**
+
+        • Semantic similarity  
+        • Skill matching  
+        • Weighted scoring
+        """
+    )
+
+    st.info(
+        "This application is designed as a "
+        "decision-support tool. Final candidate "
+        "decisions should be reviewed by a human."
+    )
+
+
+# =========================================================
 # DASHBOARD METRICS
-# ---------------------------------------------------------
+# =========================================================
 
 col1, col2, col3 = st.columns(3)
 
@@ -349,7 +128,7 @@ with col1:
 with col2:
 
     st.metric(
-        "Matching Method",
+        "Matching",
         "Semantic + Skills"
     )
 
@@ -364,9 +143,9 @@ with col3:
 st.markdown("---")
 
 
-# ---------------------------------------------------------
+# =========================================================
 # JOB DESCRIPTION
-# ---------------------------------------------------------
+# =========================================================
 
 st.header(
     "📋 Job Description"
@@ -374,35 +153,34 @@ st.header(
 
 job_description = st.text_area(
 
-    "Paste the job description here:",
+    "Paste the job description below:",
 
     height=220,
 
-    placeholder=
-    """
-    Example:
+    placeholder="""
+Example:
 
-    We are looking for a Machine Learning Engineer
-    with experience in Python, SQL, NLP, machine learning
-    and deep learning.
+We are looking for a Machine Learning Engineer
+with experience in Python, SQL, machine learning,
+deep learning and NLP.
 
-    Candidates should have strong programming skills
-    and experience developing AI applications.
-    """
+Candidates should have experience developing
+AI applications and working with data.
+"""
 )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # RESUME UPLOAD
-# ---------------------------------------------------------
+# =========================================================
 
 st.header(
-    "📄 Upload Resumes"
+    "📄 Upload Candidate Resumes"
 )
 
 uploaded_resumes = st.file_uploader(
 
-    "Upload candidate resumes in PDF format",
+    "Upload PDF resumes",
 
     type=["pdf"],
 
@@ -410,9 +188,9 @@ uploaded_resumes = st.file_uploader(
 )
 
 
-# ---------------------------------------------------------
-# PROCESSING
-# ---------------------------------------------------------
+# =========================================================
+# SCREEN BUTTON
+# =========================================================
 
 if st.button(
     "🚀 Screen Resumes",
@@ -422,159 +200,424 @@ if st.button(
     if not job_description:
 
         st.warning(
-            "Please enter a job description."
+            "Please enter a job description first."
         )
 
-    elif not uploaded_resumes:
+        st.stop()
+
+    if not uploaded_resumes:
 
         st.warning(
             "Please upload at least one resume."
         )
 
-    else:
+        st.stop()
 
-        with st.spinner(
-            "Analyzing resumes using AI..."
-        ):
 
-            resumes = []
+    # -----------------------------------------------------
+    # PROCESS JOB DESCRIPTION
+    # -----------------------------------------------------
 
-            for uploaded_file in uploaded_resumes:
+    job_text = normalize_text(
+        job_description
+    )
 
-                text = extract_pdf_text(
-                    uploaded_file
-                )
 
-                resumes.append(
-                    (
-                        uploaded_file.name,
-                        text
-                    )
-                )
+    results = []
 
-            results = screen_resumes(
-                resumes,
-                job_description
+
+    # -----------------------------------------------------
+    # PROCESS EACH RESUME
+    # -----------------------------------------------------
+
+    with st.spinner(
+        "Analyzing resumes using AI..."
+    ):
+
+        for uploaded_file in uploaded_resumes:
+
+            # Extract text
+            resume_text = extract_pdf_text(
+                uploaded_file
             )
 
-        st.success(
-            "Resume screening completed successfully!"
-        )
+            # Normalize text
+            resume_text = normalize_text(
+                resume_text
+            )
 
 
-        # -------------------------------------------------
-        # RESULTS
-        # -------------------------------------------------
+            # -------------------------------------------------
+            # SKILL EXTRACTION
+            # -------------------------------------------------
 
-        st.header(
-            "🏆 Candidate Ranking"
-        )
+            # Skills used by the project
+            skills = [
 
-        dataframe = pd.DataFrame(
-            results
-        )
-
-        st.dataframe(
-            dataframe,
-            use_container_width=True,
-            hide_index=True
-        )
-
-
-        # -------------------------------------------------
-        # TOP CANDIDATE
-        # -------------------------------------------------
-
-        top_candidate = results[0]
-
-        st.markdown("---")
-
-        st.header(
-            "🥇 Top Candidate"
-        )
-
-        st.markdown(
-            f"""
-            <div class="result-card">
-
-            <h3>{top_candidate["Candidate"]}</h3>
-
-            <h2>
-            {top_candidate["Final Score"]}%
-            Match
-            </h2>
-
-            <b>Semantic Score:</b>
-            {top_candidate["Semantic Score"]}%<br>
-
-            <b>Skill Score:</b>
-            {top_candidate["Skill Score"]}%<br><br>
-
-            <b>Matched Skills:</b><br>
-            {top_candidate["Matched Skills"] or "None detected"}
-
-            <br><br>
-
-            <b>Missing Skills:</b><br>
-            {top_candidate["Missing Skills"] or "None detected"}
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+                "python",
+                "java",
+                "c++",
+                "javascript",
+                "typescript",
+                "sql",
+                "html",
+                "css",
+                "react",
+                "node.js",
+                "machine learning",
+                "deep learning",
+                "artificial intelligence",
+                "nlp",
+                "natural language processing",
+                "tensorflow",
+                "pytorch",
+                "scikit-learn",
+                "pandas",
+                "numpy",
+                "data science",
+                "computer vision",
+                "git",
+                "github",
+                "docker",
+                "aws",
+                "azure",
+                "mongodb",
+                "mysql",
+                "postgresql",
+                "excel"
+            ]
 
 
-        # -------------------------------------------------
-        # SCORE CHART
-        # -------------------------------------------------
+            resume_skills = [
 
-        st.header(
-            "📊 Candidate Score Analysis"
-        )
+                skill
 
-        chart_data = dataframe[
+                for skill in skills
+
+                if skill in resume_text
+            ]
+
+
+            job_skills = [
+
+                skill
+
+                for skill in skills
+
+                if skill in job_text
+            ]
+
+
+            # -------------------------------------------------
+            # SEMANTIC SCORE
+            # -------------------------------------------------
+
+            semantic_score = (
+                calculate_semantic_similarity(
+                    resume_text,
+                    job_text
+                )
+            )
+
+
+            # -------------------------------------------------
+            # SKILL SCORE
+            # -------------------------------------------------
+
+            skill_score = calculate_skill_match(
+
+                resume_skills,
+
+                job_skills
+            )
+
+
+            # -------------------------------------------------
+            # MATCHED / MISSING SKILLS
+            # -------------------------------------------------
+
+            matched_skills = get_matched_skills(
+
+                resume_skills,
+
+                job_skills
+            )
+
+
+            missing_skills = get_missing_skills(
+
+                resume_skills,
+
+                job_skills
+            )
+
+
+            # -------------------------------------------------
+            # FINAL SCORE
+            # -------------------------------------------------
+
+            final_score = calculate_final_score(
+
+                semantic_score,
+
+                skill_score
+            )
+
+
+            results.append({
+
+                "Candidate":
+                    uploaded_file.name,
+
+                "Semantic Score":
+                    round(
+                        semantic_score * 100,
+                        2
+                    ),
+
+                "Skill Score":
+                    round(
+                        skill_score * 100,
+                        2
+                    ),
+
+                "Final Score":
+                    round(
+                        final_score * 100,
+                        2
+                    ),
+
+                "Matched Skills":
+                    ", ".join(
+                        matched_skills
+                    ),
+
+                "Missing Skills":
+                    ", ".join(
+                        missing_skills
+                    )
+            })
+
+
+    # =====================================================
+    # RANK CANDIDATES
+    # =====================================================
+
+    ranked_results = rank_candidates(
+        results
+    )
+
+
+    st.success(
+        "Resume screening completed successfully!"
+    )
+
+
+    # =====================================================
+    # RESULTS
+    # =====================================================
+
+    st.header(
+        "🏆 Candidate Ranking"
+    )
+
+    display_columns = [
+
+        "Rank",
+        "Candidate",
+        "Semantic Score",
+        "Skill Score",
+        "Final Score"
+    ]
+
+
+    st.dataframe(
+
+        ranked_results[
+            display_columns
+        ],
+
+        use_container_width=True,
+
+        hide_index=True
+    )
+
+
+    # =====================================================
+    # SCORE CHART
+    # =====================================================
+
+    st.header(
+        "📊 Candidate Score Analysis"
+    )
+
+    chart_data = (
+
+        ranked_results[
             [
                 "Candidate",
                 "Final Score"
             ]
-        ].set_index(
+        ]
+
+        .set_index(
             "Candidate"
         )
+    )
 
-        st.bar_chart(
-            chart_data
+
+    st.bar_chart(
+        chart_data
+    )
+
+
+    # =====================================================
+    # TOP CANDIDATE
+    # =====================================================
+
+    st.header(
+        "🥇 Top Candidate"
+    )
+
+
+    top_candidate = ranked_results.iloc[0]
+
+
+    category = get_candidate_category(
+
+        top_candidate[
+            "Final Score"
+        ]
+    )
+
+
+    st.markdown(
+
+        f"""
+        <div class="result-card">
+
+        <h2>
+        {top_candidate["Candidate"]}
+        </h2>
+
+        <h1>
+        {top_candidate["Final Score"]}%
+        </h1>
+
+        <b>{category}</b>
+
+        <br><br>
+
+        <b>Semantic Score:</b>
+        {top_candidate["Semantic Score"]}%
+
+        <br>
+
+        <b>Skill Score:</b>
+        {top_candidate["Skill Score"]}%
+
+        </div>
+        """,
+
+        unsafe_allow_html=True
+    )
+
+
+    # =====================================================
+    # EXPLAINABLE RESULTS
+    # =====================================================
+
+    st.header(
+        "💡 Explainable Candidate Insights"
+    )
+
+
+    for _, candidate in ranked_results.iterrows():
+
+        candidate_report = (
+            generate_candidate_report(
+
+                candidate["Candidate"],
+
+                candidate["Final Score"],
+
+                candidate[
+                    "Matched Skills"
+                ].split(", ")
+                if candidate[
+                    "Matched Skills"
+                ]
+                else [],
+
+                candidate[
+                    "Missing Skills"
+                ].split(", ")
+                if candidate[
+                    "Missing Skills"
+                ]
+                else []
+            )
         )
 
 
-        # -------------------------------------------------
-        # DOWNLOAD RESULTS
-        # -------------------------------------------------
+        with st.expander(
 
-        csv = dataframe.to_csv(
-            index=False
-        )
+            f'#{int(candidate["Rank"])} '
+            f'{candidate["Candidate"]} — '
+            f'{candidate["Final Score"]}%'
+        ):
 
-        st.download_button(
-
-            label="⬇️ Download Screening Results",
-
-            data=csv,
-
-            file_name=
-            "resume_screening_results.csv",
-
-            mime="text/csv",
-
-            use_container_width=True
-        )
+            st.write(
+                "**Recommendation:**",
+                candidate_report[
+                    "recommendation"
+                ]
+            )
 
 
-# ---------------------------------------------------------
+            st.write(
+                candidate_report[
+                    "skill_summary"
+                ]
+            )
+
+
+    # =====================================================
+    # DOWNLOAD RESULTS
+    # =====================================================
+
+    st.header(
+        "📥 Export Results"
+    )
+
+
+    csv = ranked_results.to_csv(
+        index=False
+    )
+
+
+    st.download_button(
+
+        label="Download Screening Results",
+
+        data=csv,
+
+        file_name=
+        "resume_screening_results.csv",
+
+        mime="text/csv",
+
+        use_container_width=True
+    )
+
+
+# =========================================================
 # FOOTER
-# ---------------------------------------------------------
+# =========================================================
 
 st.markdown("---")
 
 st.caption(
-    "AI-Based Resume Screening System | NLP + Transformer Embeddings | Major Project"
+    "AI-Based Resume Screening System | "
+    "NLP + Transformer Embeddings | Major Project"
 )
